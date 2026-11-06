@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Áudio Tesla v0.7</title>
+<title>Áudio Tesla v0.7.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -104,7 +104,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 <div id="hud"><div><b id="hudSpd">0</b><small>km/h</small></div><div id="hudEng"></div></div>
 <header>
   <div class="brand"><span class="dot" id="dot"></span>Áudio Tesla</div>
-  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.7</span></div>
+  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.7.1</span></div>
 </header>
 <main>
   <section class="panel">
@@ -149,7 +149,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 </main>
 
 <script>
-const VERSION = 'v0.7';
+const VERSION = 'v0.7.1';
 const $ = id => document.getElementById(id);
 const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
 
@@ -455,7 +455,7 @@ function synthPops(h,out){
 /* ---------- Banco de amostras GT3 (assets/gt3.bin, AES-GCM, chave = PBKDF2(PIN)) ---------- */
 let gt3Bank=null, gt3Buf=null, gt3BufCtx=null;
 async function unlockBank(pin){
-  const raw=new Uint8Array(await (await fetch('assets/gt3.bin',{cache:'force-cache'})).arrayBuffer());
+  const raw=new Uint8Array(await (await fetch('assets/gt3.bin?b=2',{cache:'no-cache'})).arrayBuffer());
   if(String.fromCharCode(...raw.slice(0,4))!=='GT3E') throw new Error('ficheiro inválido');
   const iter=new DataView(raw.buffer).getUint32(4,true), salt=raw.slice(8,24), iv=raw.slice(24,36), ct=raw.slice(36);
   const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveKey']);
