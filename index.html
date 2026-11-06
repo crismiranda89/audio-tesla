@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Áudio Tesla v0.7.1</title>
+<title>Áudio Tesla v0.8</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -73,13 +73,14 @@ header{background:color-mix(in srgb,var(--surface) 84%,transparent);backdrop-fil
 #hudEng{font-size:20px;color:#5AC8FA}
 body.view main{display:none}
 body.view #hud{display:block}
+body.view.car #hud{bottom:auto;top:calc(84px + env(safe-area-inset-top,0px))}
 .slider{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:12px}
 .slider span{font-size:16px}
 input[type=range]{width:100%;accent-color:var(--plasma);height:32px}
 .hint{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin:-10px 0 0 132px}
 .pedals{display:grid;grid-template-columns:1fr 1.4fr;gap:10px}
 .pedals[hidden]{display:none}
-.pedals button{appearance:none;border:2px solid var(--line);background:var(--bg);color:var(--text);font:600 20px Barlow,sans-serif;padding:30px 10px;border-radius:14px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer}
+.pedals button{appearance:none;border:2px solid var(--line);background:var(--bg);color:var(--text);font:600 20px Barlow,sans-serif;padding:30px 10px;border-radius:14px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer}
 .pedals button.down#thr{border-color:var(--plasma);color:var(--plasma)}
 .pedals button.down#brk{border-color:var(--brake);color:var(--brake)}
 #lock{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:var(--bg);padding:16px}
@@ -104,7 +105,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 <div id="hud"><div><b id="hudSpd">0</b><small>km/h</small></div><div id="hudEng"></div></div>
 <header>
   <div class="brand"><span class="dot" id="dot"></span>Áudio Tesla</div>
-  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.7.1</span></div>
+  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.8</span></div>
 </header>
 <main>
   <section class="panel">
@@ -149,7 +150,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 </main>
 
 <script>
-const VERSION = 'v0.7.1';
+const VERSION = 'v0.8';
 const $ = id => document.getElementById(id);
 const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
 
@@ -422,8 +423,9 @@ class Drivetrain {
   info(){ return this.gear+'ª   '+(Math.round(this.rpm/100)*100)+' rpm'; }
 }
 // eventos comuns aos dois GT3: corte de ignição na passagem, estalos na redução e em desaceleração
-function gt3Events(dt,cutG,pop){
-  const t=ctx.currentTime;
+function gt3Events(dt,cutG,popFn){
+  const t=ctx.currentTime, pop=(k,d)=>{ popFn(k,d); carFx.pop=Math.max(carFx.pop,k); };
+  carFx.r=dt.rpm/dt.RED; carFx.load=dt.load; carFx.brake=dt.brake; carFx.gear=dt.gear;
   for(const e of dt.ev){
     if(e==='up'||e==='upHard'){
       const c=0.06+(e==='upHard'?0.05:0);
@@ -621,6 +623,8 @@ const STARS=[]; for(let i=0;i<420;i++) STARS.push(newStar(true));
 let warpS=0, thrustS=0, skyT=0;
 function drawSky(now,dt){
   skyT+=dt;
+  const isCar=preset==='gt3'||preset==='gt3s'; document.body.classList.toggle('car',isCar);
+  if(isCar && carImg.complete && carImg.naturalWidth){ drawCar(dt); return; }
   const warp=1-Math.exp(-(sv*3.6)/80);
   warpS+=(warp-warpS)*(1-Math.exp(-dt/0.6));
   thrustS+=(clamp(sa/2.5,0,1)-thrustS)*(1-Math.exp(-dt/0.25));
@@ -645,6 +649,72 @@ function drawSky(now,dt){
   const csc=Math.min(W*0.86, Hh*0.95)/520*(1-0.04*thrustS);
   if(preset==='orni') drawOrni(cx, Hh*0.6, csc*0.84, skyT, thrustS, dt);
   else drawShip(cx, Hh*0.63, csc, skyT, thrustS, dt);
+}
+/* GT3 visto de trás no deserto: foto (Pexels, Kemal Can) + movimento, luzes e escape ligados ao motor */
+const carImg=new Image(); carImg.src='assets/gt3-rear.jpg';
+const carFx={r:0,load:0,brake:0,gear:1,pop:0};
+const STREAKS=[], SAND=[];
+for(let i=0;i<90;i++) STREAKS.push({side:Math.random()<0.5?-1:1, z:Math.random(), off:0.15+Math.random()*1.4, len:0.04+Math.random()*0.1});
+for(let i=0;i<70;i++) SAND.push({x:Math.random(), y:Math.random(), s:0.5+Math.random()*1.8, v:0.3+Math.random()});
+let carT=0, shakeX=0, shakeY=0, fxL=0, fxB=0, fxR=0;
+function drawCar(dt){
+  carT+=dt;
+  const kmh=sv*3.6, spd=1-Math.exp(-kmh/90);
+  fxL+=(carFx.load-fxL)*(1-Math.exp(-dt/0.12)); fxB+=(carFx.brake-fxB)*(1-Math.exp(-dt/0.15)); fxR+=(carFx.r-fxR)*(1-Math.exp(-dt/0.1));
+  carFx.pop*=Math.exp(-dt/0.07);
+  const iw=carImg.naturalWidth, ih=carImg.naturalHeight;
+  // enquadramento "cover", carro ao centro; aproxima um pouco em aceleração (squat)
+  const base=Math.max(W/iw, Hh/ih)*1.04*(1+0.025*fxL*fxR);
+  const amp=(0.4+3.2*fxR*fxL+1.2*spd)*(1+2*carFx.pop);
+  shakeX+=((Math.sin(carT*61)+Math.sin(carT*97))*amp*0.5-shakeX)*0.5;
+  shakeY+=((Math.sin(carT*73)+Math.sin(carT*131))*amp*0.5-shakeY)*0.5;
+  const dw=iw*base, dh=ih*base, ox=(W-dw)/2+shakeX, oy=(Hh-dh)*0.62+shakeY;
+  const X=u=>ox+u*dw, Y=v=>oy+v*dh;
+  g2.globalCompositeOperation='source-over'; g2.globalAlpha=1;
+  g2.fillStyle='#1a120c'; g2.fillRect(0,0,W,Hh);
+  g2.drawImage(carImg,ox,oy,dw,dh);
+  // borrão radial (zoom) com a velocidade: o mundo passa, o carro fica nítido ao centro
+  if(spd>0.05){
+    g2.save(); g2.beginPath(); g2.rect(0,0,W,Hh);
+    g2.ellipse(X(0.5),Y(0.6),dw*0.37,dh*0.42,0,0,Math.PI*2); g2.clip('evenodd');
+    for(let k=1;k<=4;k++){ const sc=1+0.03*k*spd; g2.globalAlpha=0.3*spd;
+      g2.drawImage(carImg,X(0.5)-dw*sc*0.5,Y(0.47)-dh*sc*0.47,dw*sc,dh*sc); }
+    g2.restore(); g2.globalAlpha=1;
+  }
+  // riscos no asfalto e areia a passar dos dois lados do carro (perspetiva a partir do horizonte)
+  const hx=X(0.5), hy=Y(0.46), vz=0.15+2.4*spd;
+  g2.save(); g2.beginPath(); g2.rect(0,hy,X(0.135),Hh); g2.rect(X(0.865),hy,W,Hh); g2.rect(0,Y(0.97),W,Hh); g2.clip();
+  g2.lineCap='round';
+  for(const st of STREAKS){
+    st.z+=vz*dt*(0.6+st.z);
+    if(st.z>1.15){ st.z=0.02; st.side=Math.random()<0.5?-1:1; st.off=0.15+Math.random()*1.4; }
+    const p=z=>{ const d=Math.pow(z,2.2); return [hx+st.side*st.off*dw*0.55*d, hy+(Hh-hy)*1.1*d]; };
+    const [x1,y1]=p(st.z), [x0,y0]=p(Math.max(0,st.z-st.len*(0.3+2.5*spd)));
+    g2.strokeStyle=`rgba(255,238,215,${(0.06+0.45*spd)*Math.min(1,st.z*3)})`; g2.lineWidth=0.8+4.5*st.z*st.z;
+    g2.beginPath(); g2.moveTo(x0,y0); g2.lineTo(x1,y1); g2.stroke();
+  }
+  g2.restore();
+  // pó/areia levantada atrás das rodas em aceleração forte
+  g2.fillStyle='rgba(214,170,120,.5)';
+  for(const d of SAND){
+    d.x+= (d.x<0.5?-1:1)*d.v*dt*0.15*(0.3+fxL); d.y+=d.v*dt*0.25*(0.2+spd);
+    if(d.x<-0.05||d.x>1.05||d.y>1.05){ d.x=0.3+Math.random()*0.4; d.y=0.82+Math.random()*0.1; }
+    const a=(0.08+0.5*fxL*spd)*(1-Math.abs(d.x-0.5)); if(a<0.03) continue;
+    g2.globalAlpha=a; g2.beginPath(); g2.arc(X(d.x),Y(d.y),d.s*(1+spd),0,Math.PI*2); g2.fill();
+  }
+  g2.globalAlpha=1;
+  // farolins: brilho extra ao travar
+  g2.globalCompositeOperation='lighter';
+  const glow=(u,v,r,c,a)=>{ if(a<0.01) return; const gr=g2.createRadialGradient(X(u),Y(v),0,X(u),Y(v),r*dw);
+    gr.addColorStop(0,`rgba(${c},${a})`); gr.addColorStop(1,`rgba(${c},0)`); g2.fillStyle=gr; g2.fillRect(X(u)-r*dw,Y(v)-r*dw,2*r*dw,2*r*dw); };
+  const bl=0.06+0.6*fxB; glow(0.215,0.565,0.09+0.03*fxB,'255,30,15',bl); glow(0.765,0.565,0.09+0.03*fxB,'255,30,15',bl); glow(0.49,0.305,0.06+0.02*fxB,'255,25,15',bl*0.7);
+  // escape: calor com rotação e carga; chama nos estalos
+  const heat=0.06+0.35*fxR*fxL; glow(0.457,0.89,0.05,'255,120,40',heat); glow(0.513,0.89,0.05,'255,120,40',heat);
+  if(carFx.pop>0.05){ const f=carFx.pop; glow(0.457,0.9,0.07+0.05*f,'255,170,60',0.9*f); glow(0.513,0.9,0.07+0.05*f,'255,170,60',0.9*f); glow(0.485,0.92,0.16*f,'255,90,20',0.35*f); }
+  g2.globalCompositeOperation='source-over';
+  // vinheta que aperta com a velocidade
+  const vg=g2.createRadialGradient(W/2,Hh*0.55,Math.min(W,Hh)*(0.55-0.15*spd),W/2,Hh*0.55,Math.max(W,Hh)*0.8);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,`rgba(10,5,0,${0.35+0.35*spd})`); g2.fillStyle=vg; g2.fillRect(0,0,W,Hh);
 }
 /* Ornitóptero visto de trás: casco blindado cinzento-escuro, asas em lâmina que batem em sincronia com o som */
 let flapPh=0, lastBeat=0;
@@ -890,6 +960,10 @@ $('viewBtn').addEventListener('click',()=>{ const v=document.body.classList.togg
 
 /* ---------- Loop principal ---------- */
 let sv=0, sa=0, lastF=performance.now(), lastAudio=0, lastUI=0;
+let lastErr='';
+function showErr(err){ const m='Erro: '+(err&&err.message||err); if(m!==lastErr){ lastErr=m; setStatus(m); console.error(err); } }
+addEventListener('error',e=>showErr(e.error||e.message));
+addEventListener('unhandledrejection',e=>showErr(e.reason));
 function frame(now){
   const dt=Math.min(0.1,(now-lastF)/1000); lastF=now;
   if(running && mode==='sim') simStep(dt,now);
@@ -900,7 +974,7 @@ function frame(now){
   if(running && engine && now-lastAudio>50){
     const adt=Math.min(0.2,(now-lastAudio)/1000); lastAudio=now;
     const kmh=sv*3.6, s=1-Math.exp(-kmh/75);
-    engine.update(s, clamp(sa/2.5,0,1), clamp(-sa/3,0,1), {kmh, a:sa, dt:adt, sens});
+    try{ engine.update(s, clamp(sa/2.5,0,1), clamp(-sa/3,0,1), {kmh, a:sa, dt:adt, sens}); }catch(err){ showErr(err); }
   }
   if(now-lastUI>80){
     lastUI=now;
@@ -917,7 +991,7 @@ function frame(now){
     $('eng').hidden=!ei; if(ei) $('eng').textContent=ei;
     $('hudSpd').textContent=Math.round(sv*3.6); $('hudEng').textContent=ei||'';
   }
-  drawSky(now,dt);
+  try{ drawSky(now,dt); }catch(err){ showErr(err); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
