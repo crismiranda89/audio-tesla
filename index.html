@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Áudio Tesla v0.4</title>
+<title>Áudio Tesla v0.5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -90,7 +90,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 <div id="hud"><div><b id="hudSpd">0</b><small>km/h</small></div><div id="hudEng"></div></div>
 <header>
   <div class="brand"><span class="dot" id="dot"></span>Áudio Tesla</div>
-  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.4</span></div>
+  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.5</span></div>
 </header>
 <main>
   <section class="panel">
@@ -132,7 +132,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 </main>
 
 <script>
-const VERSION = 'v0.4';
+const VERSION = 'v0.5';
 const $ = id => document.getElementById(id);
 const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
 
@@ -493,7 +493,131 @@ function drawSky(now,dt){
   }
   if(warpS>0.5){ const a=(warpS-0.5)*0.5, gr=g2.createRadialGradient(cx,cy,0,cx,cy,f*0.7);
     gr.addColorStop(0,`rgba(140,190,255,${a})`); gr.addColorStop(1,'rgba(140,190,255,0)'); g2.fillStyle=gr; g2.fillRect(0,0,W,Hh); }
-  drawShip(cx, Hh*0.63, Math.min(W*0.86, Hh*0.95)/520*(1-0.04*thrustS), skyT, thrustS, dt);
+  const csc=Math.min(W*0.86, Hh*0.95)/520*(1-0.04*thrustS);
+  if(preset==='orni') drawOrni(cx, Hh*0.6, csc*0.92, skyT, thrustS, dt);
+  else drawShip(cx, Hh*0.63, csc, skyT, thrustS, dt);
+}
+/* Ornitóptero visto de trás: asas tipo libelinha que batem em sincronia com o som */
+let flapPh=0, lastBeat=0;
+const ORINGS=[], DUST=[];
+function orniWing(L,h,alpha,blur){
+  const MEM=`rgba(205,225,240,${0.28*alpha})`, VEIN=`rgba(40,36,30,${0.7*alpha})`;
+  g2.beginPath(); g2.moveTo(0,-7);
+  g2.bezierCurveTo(L*0.3,-h*1.05, L*0.78,-h*0.95, L,-h*0.15);
+  g2.bezierCurveTo(L*1.02,h*0.25, L*0.85,h*0.7, L*0.55,h*0.75);
+  g2.bezierCurveTo(L*0.3,h*0.8, L*0.1,h*0.5, 0,8); g2.closePath();
+  if(blur){ g2.fillStyle=MEM; g2.fill(); return; }
+  const ir=g2.createLinearGradient(0,-h,L,h);
+  ir.addColorStop(0,`rgba(225,235,245,${0.42*alpha})`); ir.addColorStop(0.45,`rgba(170,215,235,${0.34*alpha})`);
+  ir.addColorStop(0.7,`rgba(215,185,235,${0.30*alpha})`); ir.addColorStop(1,`rgba(235,225,200,${0.36*alpha})`);
+  g2.fillStyle=ir; g2.fill();
+  g2.strokeStyle=VEIN; g2.lineWidth=1; g2.stroke();
+  // nervuras longitudinais
+  for(const k of [-0.45,-0.1,0.25,0.55]){
+    g2.beginPath(); g2.moveTo(4,k*8); g2.quadraticCurveTo(L*0.5,k*h*1.1-h*0.2, L*0.97,k*h*0.5-h*0.1); g2.stroke();
+  }
+  // nervuras transversais
+  g2.lineWidth=0.7;
+  for(let i=1;i<14;i++){ const u=i/14*L; g2.beginPath(); g2.moveTo(u,-h*0.85*Math.sin(Math.PI*Math.min(1,(u/L)*0.9+0.1))); g2.lineTo(u+6,h*0.7*Math.sin(Math.PI*Math.min(1,u/L*0.85+0.15))); g2.stroke(); }
+  // longarina do bordo de ataque
+  g2.strokeStyle=`rgba(70,58,42,${alpha})`; g2.lineWidth=4;
+  g2.beginPath(); g2.moveTo(0,-7); g2.bezierCurveTo(L*0.3,-h*1.05, L*0.78,-h*0.95, L,-h*0.15); g2.stroke();
+  // pterostigma (mancha escura perto da ponta)
+  g2.fillStyle=`rgba(60,45,30,${0.85*alpha})`; g2.beginPath(); g2.ellipse(L*0.86,-h*0.62,12,4,0.25,0,7); g2.fill();
+}
+function drawOrni(x,y,sc,t,th,dt){
+  const kmh=sv*3.6, s=1-Math.exp(-kmh/75), an=clamp(-sa/3,0,1);
+  // mesma frequência de batimento do preset de som, dividida por 4 para o olho a acompanhar
+  const audioHz=12+22*s+12*th-5*an, hz=running? audioHz/4 : 0.7;
+  flapPh+=2*Math.PI*hz*dt;
+  const A=running? 0.30+0.20*s+0.40*th : 0.14;
+  // batida para baixo: empurra ar (ondas e pó)
+  const beat=Math.floor(flapPh/(2*Math.PI));
+  if(beat!==lastBeat){ lastBeat=beat; if(running){
+    ORINGS.push({r:40,a:0.25+0.55*th});
+    for(let i=0;i<6+16*th;i++){ const m=Math.random()<0.5?-1:1; DUST.push({x:m*(120+Math.random()*180),y:30+Math.random()*30,vx:m*(40+Math.random()*120),vy:60+Math.random()*(80+200*th),life:0,max:0.5+Math.random()*0.6}); }
+  }}
+  const SAND=['#e8dcc2','#c7b48f','#8d7a5a','#4a3f2f'], EDGE='rgba(30,24,16,.75)', PANEL='rgba(50,40,28,.35)';
+  const bob=-6*Math.cos(flapPh+Math.PI*0.6)*(A/0.5);
+  g2.save();
+  g2.translate(x, y+bob+Math.sin(t*0.8)*3); g2.rotate(Math.sin(t*0.5)*0.02); g2.scale(sc,sc);
+  g2.lineJoin='round'; g2.lineCap='round';
+
+  // ondas de ar empurradas para trás (na nossa direção)
+  for(let i=ORINGS.length-1;i>=0;i--){ const o=ORINGS[i]; o.r+=(260+420*th)*dt; o.a*=Math.exp(-dt*2.6);
+    if(o.a<0.02){ ORINGS.splice(i,1); continue; }
+    g2.strokeStyle=`rgba(230,210,170,${o.a})`; g2.lineWidth=3; g2.beginPath(); g2.ellipse(0,20,o.r,o.r*0.42,0,0,7); g2.stroke(); }
+
+  // ---- patas (dobradas, tipo inseto) ----
+  for(const m of [-1,1]) for(const [ax,ay,kx,ky,fx,fy] of [[30,30,70,56,62,96],[44,10,92,30,96,74]]){
+    g2.strokeStyle='#3b3226'; g2.lineWidth=5; g2.beginPath(); g2.moveTo(m*ax,ay); g2.lineTo(m*kx,ky); g2.lineTo(m*fx,fy); g2.stroke();
+    g2.fillStyle='#6d5d44'; g2.beginPath(); g2.arc(m*kx,ky,4,0,7); g2.fill();
+    g2.strokeStyle='#3b3226'; g2.lineWidth=3; g2.beginPath(); g2.moveTo(m*fx-6,fy); g2.lineTo(m*fx+6,fy); g2.stroke();
+  }
+
+  // ---- motores laterais ----
+  for(const m of [-1,1]){
+    g2.fillStyle=lg(0,40,[SAND[1],SAND[3]]); g2.beginPath(); g2.roundRect(m*66-16,-4,32,40,10); g2.fill(); g2.strokeStyle=EDGE; g2.lineWidth=1.3; g2.stroke();
+    g2.fillStyle='#231d15'; g2.beginPath(); g2.arc(m*66,24,10,0,7); g2.fill();
+  }
+
+  // ---- corpo segmentado ----
+  g2.fillStyle=lg(-100,70,[SAND[0],SAND[1],SAND[2],SAND[3]]);
+  g2.beginPath(); g2.moveTo(-34,-92); g2.quadraticCurveTo(0,-104,34,-92);
+  g2.lineTo(56,-10); g2.quadraticCurveTo(62,30,40,56); g2.lineTo(-40,56); g2.quadraticCurveTo(-62,30,-56,-10); g2.closePath();
+  g2.fill(); g2.strokeStyle=EDGE; g2.lineWidth=1.8; g2.stroke();
+  g2.strokeStyle=PANEL; g2.lineWidth=1.4;
+  for(const [yy,w] of [[-70,44],[-46,50],[-22,55],[2,58],[26,56],[46,46]]){ g2.beginPath(); g2.moveTo(-w,yy+4); g2.quadraticCurveTo(0,yy-6,w,yy+4); g2.stroke(); }
+  line(0,-96,0,52,PANEL,1.2);
+  // janelas laterais da cabine
+  for(const m of [-1,1]){ poly(mir(m,[30,-86, 44,-58, 38,-54, 26,-80]),'#162029',EDGE,1); }
+  // cúpula da cabine (lá à frente)
+  g2.fillStyle=lg(-118,-90,['#2c4a5a','#0b1218']); g2.beginPath(); g2.ellipse(0,-98,26,13,0,Math.PI,0); g2.closePath(); g2.fill(); g2.strokeStyle='#cbb994'; g2.lineWidth=2; g2.stroke();
+  g2.fillStyle='rgba(200,230,255,.3)'; g2.beginPath(); g2.ellipse(-9,-104,9,2.5,-0.2,0,7); g2.fill();
+  // antenas
+  for(const m of [-1,1]){ g2.strokeStyle='#4a3f2f'; g2.lineWidth=2; g2.beginPath(); g2.moveTo(m*10,-108); g2.quadraticCurveTo(m*20,-140,m*40,-150); g2.stroke(); }
+  // cauda e reator traseiro
+  g2.fillStyle=lg(50,100,[SAND[2],SAND[3]]); poly([-22,52, 22,52, 14,96, -14,96],g2.fillStyle,EDGE,1.4);
+  g2.fillStyle='#8a7a5e'; g2.beginPath(); g2.arc(0,98,14,0,7); g2.fill();
+  g2.fillStyle='#1c1711'; g2.beginPath(); g2.arc(0,98,10,0,7); g2.fill();
+
+  // ---- asas: par da frente (mais longe) e par de trás, em contrafase como uma libelinha ----
+  const ghosts = hz>3 ? 4 : 1;
+  const pairs=[{rx:20,ry:-74,L:250,h:24,k:0.84,off:0},{rx:30,ry:-40,L:285,h:28,k:1,off:Math.PI*0.7}];
+  for(const p of pairs){
+    for(const m of [-1,1]){
+      for(let gi=ghosts-1;gi>=0;gi--){
+        const ph=flapPh+p.off-gi*0.45;
+        const ang=A*Math.sin(ph)+0.05;
+        g2.save(); g2.translate(m*p.rx,p.ry); g2.scale(m*p.k,p.k); g2.rotate(-ang);
+        // ligeira rotação de passo: a asa "torce" ao descer
+        g2.transform(1,0,0.12*Math.cos(ph),1,0,0);
+        orniWing(p.L,p.h,gi===0?1:0.35/gi,gi>0);
+        g2.restore();
+      }
+      // articulação
+      g2.fillStyle='#5a4b36'; g2.beginPath(); g2.arc(m*p.rx,p.ry,7*p.k,0,7); g2.fill(); g2.strokeStyle=EDGE; g2.lineWidth=1; g2.stroke();
+    }
+  }
+
+  // ---- brilho do reator e pó ----
+  g2.globalCompositeOperation='lighter';
+  const flick=0.9+0.1*Math.sin(t*41);
+  const R=(10+70*th+15*warpS)*flick, jg=g2.createRadialGradient(0,98,0,0,98,R);
+  jg.addColorStop(0,'rgba(255,245,220,.9)'); jg.addColorStop(0.25,`rgba(255,170,80,${0.4+0.5*th})`); jg.addColorStop(1,'rgba(255,120,40,0)');
+  g2.fillStyle=jg; g2.beginPath(); g2.arc(0,98,R,0,7); g2.fill();
+  for(const m of [-1,1]){ const r2=(6+30*th)*flick, eg=g2.createRadialGradient(m*66,24,0,m*66,24,r2);
+    eg.addColorStop(0,'rgba(255,230,190,.8)'); eg.addColorStop(1,'rgba(255,140,60,0)'); g2.fillStyle=eg; g2.beginPath(); g2.arc(m*66,24,r2,0,7); g2.fill(); }
+  g2.globalCompositeOperation='source-over';
+  for(let i=DUST.length-1;i>=0;i--){ const d=DUST[i]; d.life+=dt; if(d.life>d.max){ DUST.splice(i,1); continue; }
+    d.x+=d.vx*dt; d.y+=d.vy*dt; const k=1-d.life/d.max;
+    g2.fillStyle=`rgba(215,190,150,${0.45*k})`; g2.beginPath(); g2.arc(d.x,d.y,2+6*(1-k),0,7); g2.fill(); }
+  // luzes
+  const strobe=(t*1.1%1)<0.07?1:0;
+  for(const [lx,ly,c,a] of [[-40,-150,'255,200,120',0.6],[40,-150,'255,200,120',0.6],[0,-60,'255,255,255',strobe]]){
+    const r=g2.createRadialGradient(lx,ly,0,lx,ly,14); r.addColorStop(0,`rgba(${c},${a})`); r.addColorStop(1,`rgba(${c},0)`);
+    g2.fillStyle=r; g2.beginPath(); g2.arc(lx,ly,14,0,7); g2.fill(); }
+  g2.restore();
 }
 /* Nave vista de trás: ~520 unidades de envergadura, origem no centro do casco */
 const SPARKS=[];
