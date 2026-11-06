@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Áudio Tesla v0.3</title>
+<title>Áudio Tesla v0.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -90,7 +90,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 <div id="hud"><div><b id="hudSpd">0</b><small>km/h</small></div><div id="hudEng"></div></div>
 <header>
   <div class="brand"><span class="dot" id="dot"></span>Áudio Tesla</div>
-  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.3</span></div>
+  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.4</span></div>
 </header>
 <main>
   <section class="panel">
@@ -132,7 +132,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 </main>
 
 <script>
-const VERSION = 'v0.3';
+const VERSION = 'v0.4';
 const $ = id => document.getElementById(id);
 const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
 
@@ -493,40 +493,124 @@ function drawSky(now,dt){
   }
   if(warpS>0.5){ const a=(warpS-0.5)*0.5, gr=g2.createRadialGradient(cx,cy,0,cx,cy,f*0.7);
     gr.addColorStop(0,`rgba(140,190,255,${a})`); gr.addColorStop(1,'rgba(140,190,255,0)'); g2.fillStyle=gr; g2.fillRect(0,0,W,Hh); }
-  drawShip(cx, Hh*0.66, Math.min(W,Hh*1.5)/1300*(1-0.05*thrustS), skyT, thrustS);
+  drawShip(cx, Hh*0.63, Math.min(W*0.86, Hh*0.95)/520*(1-0.04*thrustS), skyT, thrustS, dt);
 }
-function drawShip(x,y,sc,t,th){
+/* Nave vista de trás: ~520 unidades de envergadura, origem no centro do casco */
+const SPARKS=[];
+const ENGINES=[{x:-36,y:12,r:25},{x:36,y:12,r:25},{x:0,y:-14,r:14},{x:-128,y:50,r:13},{x:128,y:50,r:13}];
+function lg(y0,y1,stops){ const g=g2.createLinearGradient(0,y0,0,y1); stops.forEach((c,i)=>g.addColorStop(i/(stops.length-1),c)); return g; }
+function poly(pts,fill,stroke,lw){
+  g2.beginPath(); g2.moveTo(pts[0],pts[1]); for(let i=2;i<pts.length;i+=2) g2.lineTo(pts[i],pts[i+1]); g2.closePath();
+  if(fill){ g2.fillStyle=fill; g2.fill(); } if(stroke){ g2.strokeStyle=stroke; g2.lineWidth=lw||1.2; g2.stroke(); }
+}
+function line(x1,y1,x2,y2,c,w){ g2.strokeStyle=c; g2.lineWidth=w||1; g2.beginPath(); g2.moveTo(x1,y1); g2.lineTo(x2,y2); g2.stroke(); }
+function mir(m,pts){ return pts.map((v,i)=>i%2===0?v*m:v); }
+function drawShip(x,y,sc,t,th,dt){
+  const EDGE='rgba(12,18,28,.75)', PANEL='rgba(40,52,68,.35)', ACC='#2fa8e0', ACC2='#e8743b';
   g2.save();
-  g2.translate(x, y+Math.sin(t*0.9)*4); g2.rotate(Math.sin(t*0.6)*0.02); g2.scale(sc,sc);
-  g2.strokeStyle='rgba(20,28,40,.6)'; g2.lineWidth=1.5;
-  const wg=g2.createLinearGradient(0,-20,0,60); wg.addColorStop(0,'#e9eef5'); wg.addColorStop(1,'#7d8796');
+  g2.translate(x, y+Math.sin(t*0.9)*5); g2.rotate(Math.sin(t*0.6)*0.025); g2.scale(sc,sc);
+  g2.lineJoin='round';
+
+  // sombra/brilho por baixo
+  const ug=g2.createRadialGradient(0,40,10,0,40,260); ug.addColorStop(0,`rgba(60,140,255,${0.12+0.15*th})`); ug.addColorStop(1,'rgba(60,140,255,0)');
+  g2.fillStyle=ug; g2.beginPath(); g2.arc(0,40,260,0,7); g2.fill();
+
+  // ---- asas ----
+  const wingG=lg(-10,60,['#f2f5f9','#b9c3cf','#6c7686']);
+  const wingDark=lg(20,60,['#7c8696','#3d4552']);
   for(const m of [-1,1]){
-    g2.fillStyle=wg;
-    g2.beginPath(); g2.moveTo(m*40,-6); g2.lineTo(m*230,26); g2.lineTo(m*236,38); g2.lineTo(m*200,40); g2.lineTo(m*44,30); g2.closePath(); g2.fill(); g2.stroke();
-    g2.beginPath(); g2.moveTo(m*222,28); g2.lineTo(m*232,-18); g2.lineTo(m*238,30); g2.closePath(); g2.fill(); g2.stroke();
+    // face inferior (dá espessura)
+    poly(mir(m,[52,30, 214,50, 258,46, 262,54, 214,60, 54,44]),wingDark,EDGE);
+    // face superior
+    poly(mir(m,[50,-6, 252,30, 260,44, 214,50, 52,32]),wingG,EDGE,1.5);
+    // faixa no bordo de ataque
+    poly(mir(m,[56,-2, 246,31, 249,36, 58,5]),ACC);
+    // linhas de painel
+    for(const [a,b,c,d] of [[90,2,96,36],[132,10,137,40],[174,18,178,44],[214,25,216,48]]) line(m*a,b,m*c,d,PANEL,1.2);
+    line(m*60,18,m*236,42,PANEL,1);
+    // flaps
+    poly(mir(m,[100,38, 200,49, 200,53, 100,43]),'#59626f',EDGE,0.8);
+    // estabilizador na ponta
+    poly(mir(m,[244,34, 252,-40, 260,-44, 266,-36, 264,48]),lg(-44,48,['#e9eef4','#8a95a4']),EDGE,1.3);
+    poly(mir(m,[253,-30, 259,-36, 262,-10, 256,-6]),ACC2);
+    // canhão
+    g2.fillStyle='#3a414c'; g2.fillRect(m*176-5,14,10,22);
+    g2.fillStyle='#14181e'; g2.beginPath(); g2.arc(m*176,36,4,0,7); g2.fill();
+    // nacela sob a asa
+    g2.fillStyle=lg(30,70,['#c8d0da','#59626f']); g2.beginPath(); g2.ellipse(m*128,50,22,19,0,0,7); g2.fill(); g2.strokeStyle=EDGE; g2.lineWidth=1.3; g2.stroke();
+    line(m*128-22,50,m*128-28,40,EDGE,3);
   }
-  const fg=g2.createLinearGradient(0,-70,0,50); fg.addColorStop(0,'#ffffff'); fg.addColorStop(0.55,'#c9d1dc'); fg.addColorStop(1,'#5f6977');
-  g2.fillStyle=fg; g2.beginPath();
-  g2.moveTo(-62,30); g2.quadraticCurveTo(-74,-20,-36,-52); g2.quadraticCurveTo(0,-72,36,-52); g2.quadraticCurveTo(74,-20,62,30); g2.quadraticCurveTo(0,48,-62,30);
-  g2.closePath(); g2.fill(); g2.stroke();
-  g2.fillStyle='#dfe5ec'; g2.beginPath(); g2.moveTo(-7,-55); g2.lineTo(0,-118); g2.lineTo(7,-55); g2.closePath(); g2.fill(); g2.stroke();
-  g2.strokeStyle='rgba(60,70,85,.35)'; g2.beginPath(); g2.moveTo(-50,-10); g2.quadraticCurveTo(0,-26,50,-10); g2.stroke();
+
+  // ---- derivas dorsais ----
   for(const m of [-1,1]){
-    g2.fillStyle='#2b313a'; g2.beginPath(); g2.arc(m*30,8,20,0,Math.PI*2); g2.fill();
-    g2.fillStyle='#11151b'; g2.beginPath(); g2.arc(m*30,8,15,0,Math.PI*2); g2.fill();
+    poly(mir(m,[18,-56, 46,-128, 56,-130, 52,-118, 40,-50]),lg(-130,-50,['#f4f7fa','#9aa4b2']),EDGE,1.4);
+    poly(mir(m,[44,-118, 53,-124, 50,-112, 42,-104]),ACC);
   }
+
+  // ---- casco ----
+  const hullG=lg(-78,56,['#ffffff','#dde3ea','#a9b3c0','#5a6371']);
+  g2.fillStyle=hullG; g2.beginPath();
+  g2.moveTo(-84,36); g2.quadraticCurveTo(-96,-24,-50,-62); g2.quadraticCurveTo(0,-84,50,-62); g2.quadraticCurveTo(96,-24,84,36);
+  g2.quadraticCurveTo(0,62,-84,36); g2.closePath(); g2.fill(); g2.strokeStyle=EDGE; g2.lineWidth=1.8; g2.stroke();
+  // espinha
+  poly([-6,-78, 6,-78, 4,-40, -4,-40],'#c6ced8',EDGE,1);
+  // antena
+  line(0,-80,0,-128,'#cfd6df',3); line(-8,-112,8,-112,'#cfd6df',2);
+  // painéis e grelhas laterais
+  g2.strokeStyle=PANEL; g2.lineWidth=1.2;
+  g2.beginPath(); g2.moveTo(-70,-20); g2.quadraticCurveTo(0,-44,70,-20); g2.stroke();
+  g2.beginPath(); g2.moveTo(-58,-48); g2.lineTo(-74,24); g2.moveTo(58,-48); g2.lineTo(74,24); g2.stroke();
+  for(const m of [-1,1]) for(let i=0;i<5;i++) line(m*(80-i*1.5),-8+i*7,m*(66-i*1.5),-6+i*7,'rgba(20,26,36,.55)',2);
+  // faixa de identificação
+  poly([-84,30, -60,-2, -54,2, -76,34],ACC2); poly([84,30, 60,-2, 54,2, 76,34],ACC2);
+  // cabine (vista de trás: cúpula traseira)
+  const cg=g2.createLinearGradient(0,-82,0,-50); cg.addColorStop(0,'#1d3b5c'); cg.addColorStop(1,'#060a12');
+  g2.fillStyle=cg; g2.beginPath(); g2.ellipse(0,-62,32,15,0,Math.PI,0); g2.lineTo(32,-58); g2.quadraticCurveTo(0,-50,-32,-58); g2.closePath(); g2.fill();
+  g2.strokeStyle='#cfd6df'; g2.lineWidth=2; g2.stroke();
+  g2.fillStyle='rgba(180,225,255,.35)'; g2.beginPath(); g2.ellipse(-12,-70,12,3.5,-0.2,0,7); g2.fill();
+  // placa traseira dos motores
+  g2.fillStyle=lg(-30,48,['#4a525e','#272c34']); g2.beginPath(); g2.roundRect(-72,-30,144,72,18); g2.fill(); g2.strokeStyle=EDGE; g2.lineWidth=1.5; g2.stroke();
+  // rebites
+  g2.fillStyle='rgba(200,210,222,.5)';
+  for(let i=-60;i<=60;i+=15){ g2.beginPath(); g2.arc(i,-24,1.4,0,7); g2.fill(); g2.beginPath(); g2.arc(i,36,1.4,0,7); g2.fill(); }
+
+  // ---- motores (anéis) ----
+  for(const e of ENGINES){
+    g2.fillStyle='#8a94a2'; g2.beginPath(); g2.arc(e.x,e.y,e.r+4,0,7); g2.fill();
+    g2.fillStyle='#2b313a'; g2.beginPath(); g2.arc(e.x,e.y,e.r,0,7); g2.fill();
+    g2.strokeStyle='rgba(150,165,185,.35)'; g2.lineWidth=1;
+    for(let k=0.8;k>0.3;k-=0.18){ g2.beginPath(); g2.arc(e.x,e.y,e.r*k,0,7); g2.stroke(); }
+    // pás da turbina
+    for(let k=0;k<10;k++){ const a=k/10*Math.PI*2+t*(2+12*th); line(e.x+Math.cos(a)*e.r*0.3,e.y+Math.sin(a)*e.r*0.3,e.x+Math.cos(a)*e.r*0.75,e.y+Math.sin(a)*e.r*0.75,'rgba(120,140,165,.4)',1.2); }
+  }
+
+  // ---- brilho e faíscas ----
   g2.globalCompositeOperation='lighter';
-  const flick=0.9+0.1*Math.sin(t*37);
-  for(const m of [-1,1]){
-    const R=(22+90*th+20*warpS)*flick, gl=g2.createRadialGradient(m*30,8,0,m*30,8,R);
-    gl.addColorStop(0,'rgba(230,250,255,.85)'); gl.addColorStop(0.18,`rgba(90,200,250,${0.6+0.4*th})`); gl.addColorStop(1,'rgba(40,120,255,0)');
-    g2.fillStyle=gl; g2.beginPath(); g2.arc(m*30,8,R,0,Math.PI*2); g2.fill();
+  const flick=0.88+0.12*Math.sin(t*37)+0.05*Math.sin(t*91);
+  for(const e of ENGINES){
+    const R=(e.r*0.9+e.r*3.4*th+e.r*0.9*warpS)*flick;
+    const gl=g2.createRadialGradient(e.x,e.y,0,e.x,e.y,R);
+    gl.addColorStop(0,'rgba(240,252,255,.95)'); gl.addColorStop(0.15,`rgba(120,215,255,${0.55+0.45*th})`);
+    gl.addColorStop(0.5,`rgba(50,130,255,${0.18+0.3*th})`); gl.addColorStop(1,'rgba(40,90,255,0)');
+    g2.fillStyle=gl; g2.beginPath(); g2.arc(e.x,e.y,R,0,7); g2.fill();
+    g2.fillStyle='rgba(255,255,255,.9)'; g2.beginPath(); g2.arc(e.x,e.y,e.r*0.28,0,7); g2.fill();
   }
-  const blink=(Math.sin(t*3)>0.85)?1:0.15;
-  for(const m of [-1,1]){
-    const lg=g2.createRadialGradient(m*234,34,0,m*234,34,14);
-    lg.addColorStop(0,`rgba(255,255,255,${blink})`); lg.addColorStop(1,'rgba(255,255,255,0)');
-    g2.fillStyle=lg; g2.beginPath(); g2.arc(m*234,34,14,0,Math.PI*2); g2.fill();
+  const rate=(8+120*th+40*warpS)*dt;
+  for(let n=Math.floor(rate)+(Math.random()<rate%1?1:0);n>0;n--){
+    const e=ENGINES[Math.random()<0.8?Math.floor(Math.random()*2):2+Math.floor(Math.random()*3)], a=Math.random()*Math.PI*2, sp=40+Math.random()*(120+260*th);
+    SPARKS.push({x:e.x,y:e.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0,max:0.25+Math.random()*0.35});
+  }
+  for(let i=SPARKS.length-1;i>=0;i--){
+    const s=SPARKS[i]; s.life+=dt; if(s.life>s.max){ SPARKS.splice(i,1); continue; }
+    s.x+=s.vx*dt; s.y+=s.vy*dt; const k=1-s.life/s.max;
+    g2.fillStyle=`rgba(150,220,255,${0.8*k})`; g2.beginPath(); g2.arc(s.x,s.y,1+2.5*(1-k),0,7); g2.fill();
+  }
+  // luzes de navegação
+  const strobe=(t*1.3%1)<0.07?1:0;
+  const lights=[[-262,50,'255,60,60',0.9],[262,50,'60,255,120',0.9],[-56,-130,'255,255,255',strobe],[56,-130,'255,255,255',strobe],[0,-128,'255,80,80',0.4+0.6*(Math.sin(t*4)>0.6?1:0)]];
+  for(const [lx,ly,c,a] of lights){
+    const r=g2.createRadialGradient(lx,ly,0,lx,ly,18); r.addColorStop(0,`rgba(${c},${a})`); r.addColorStop(1,`rgba(${c},0)`);
+    g2.fillStyle=r; g2.beginPath(); g2.arc(lx,ly,18,0,7); g2.fill();
   }
   g2.restore();
 }
