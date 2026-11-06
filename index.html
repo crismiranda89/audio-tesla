@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Áudio Tesla v0.8</title>
+<title>Áudio Tesla v0.9</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -105,7 +105,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 <div id="hud"><div><b id="hudSpd">0</b><small>km/h</small></div><div id="hudEng"></div></div>
 <header>
   <div class="brand"><span class="dot" id="dot"></span>Áudio Tesla</div>
-  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.8</span></div>
+  <div class="hdr-r"><button class="vbtn" id="viewBtn">Nave</button><span class="ver" id="ver">v0.9</span></div>
 </header>
 <main>
   <section class="panel">
@@ -150,7 +150,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--plasma);outline
 </main>
 
 <script>
-const VERSION = 'v0.8';
+const VERSION = 'v0.9';
 const $ = id => document.getElementById(id);
 const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
 
@@ -624,7 +624,7 @@ let warpS=0, thrustS=0, skyT=0;
 function drawSky(now,dt){
   skyT+=dt;
   const isCar=preset==='gt3'||preset==='gt3s'; document.body.classList.toggle('car',isCar);
-  if(isCar && carImg.complete && carImg.naturalWidth){ drawCar(dt); return; }
+  if(isCar){ drawCar(dt); return; }
   const warp=1-Math.exp(-(sv*3.6)/80);
   warpS+=(warp-warpS)*(1-Math.exp(-dt/0.6));
   thrustS+=(clamp(sa/2.5,0,1)-thrustS)*(1-Math.exp(-dt/0.25));
@@ -650,71 +650,169 @@ function drawSky(now,dt){
   if(preset==='orni') drawOrni(cx, Hh*0.6, csc*0.84, skyT, thrustS, dt);
   else drawShip(cx, Hh*0.63, csc, skyT, thrustS, dt);
 }
-/* GT3 visto de trás no deserto: foto (Pexels, Kemal Can) + movimento, luzes e escape ligados ao motor */
-const carImg=new Image(); carImg.src='assets/gt3-rear.jpg';
+/* GT3: estrada no deserto em pseudo-3D (estilo arcade). O carro (recorte da foto de Kemal Can, licença Pexels)
+   fica parado ao fundo do ecrã; a estrada, a berma, os cactos e as dunas passam à velocidade real */
+const carSpr=new Image(); carSpr.src='assets/gt3-car.webp';
 const carFx={r:0,load:0,brake:0,gear:1,pop:0};
-const STREAKS=[], SAND=[];
-for(let i=0;i<90;i++) STREAKS.push({side:Math.random()<0.5?-1:1, z:Math.random(), off:0.15+Math.random()*1.4, len:0.04+Math.random()*0.1});
-for(let i=0;i<70;i++) SAND.push({x:Math.random(), y:Math.random(), s:0.5+Math.random()*1.8, v:0.3+Math.random()});
-let carT=0, shakeX=0, shakeY=0, fxL=0, fxB=0, fxR=0;
+const RD={seg:200, roadW:2100, camH:1150, depth:0.9, draw:170, z:0, bg:0, SPEEDK:42};
+const hash=i=>{ let h=Math.imul((i|0)^0x9e3779b9,0x85ebca6b); h^=h>>>13; h=Math.imul(h,0xc2b2ae35); h^=h>>>16; return (h>>>0)/4294967296; };
+const curveAt=i=>2.6*Math.sin(i/110)*Math.max(0,Math.sin(i/260+0.4)) + 1.4*Math.sin(i/47+1.3)*Math.max(0,Math.sin(i/170));
+const hillAt=i=>700*Math.sin(i/71)*Math.max(0,Math.sin(i/190)) + 260*Math.sin(i/33);
+const mixC=(a,b,t)=>`rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`;
+const PAL={ haze:[246,214,170], sand1:[224,178,124], sand2:[209,162,108], shoulder1:[204,152,98], shoulder2:[186,137,86],
+  road1:[76,72,70], road2:[86,82,78], line:[236,228,214] };
+/* sprites pré-desenhados (contraluz ao pôr do sol: corpo escuro, contorno quente do lado do sol) */
+function mkSprite(w,h,draw){ const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d'),w,h); return c; }
+function rim(g,w,h){ g.globalCompositeOperation='source-atop'; const gr=g.createLinearGradient(0,0,w,0);
+  gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(0.6,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(255,190,120,.45)'); g.fillStyle=gr; g.fillRect(0,0,w,h);
+  const gv=g.createLinearGradient(0,0,0,h); gv.addColorStop(0,'rgba(255,220,170,.12)'); gv.addColorStop(1,'rgba(30,20,10,.35)'); g.fillStyle=gv; g.fillRect(0,0,w,h);
+  g.globalCompositeOperation='source-over'; }
+function saguaro(seed){ const R=k=>hash(seed*31+k); return mkSprite(220,460,(g,w,h)=>{
+  const body=(x,y,ww,hh)=>{ const gr=g.createLinearGradient(x,0,x+ww,0); gr.addColorStop(0,'#2c3a22'); gr.addColorStop(0.5,'#4b5d31'); gr.addColorStop(1,'#33432a');
+    g.fillStyle=gr; g.beginPath(); g.roundRect(x,y,ww,hh,ww/2); g.fill();
+    g.strokeStyle='rgba(20,28,14,.45)'; g.lineWidth=1.5; for(let k=1;k<4;k++){ g.beginPath(); g.moveTo(x+ww*k/4,y+ww*0.4); g.lineTo(x+ww*k/4,y+hh-4); g.stroke(); } };
+  const tw=44, tx=w/2-tw/2; body(tx,20,tw,h-20);
+  const arms=1+Math.floor(R(1)*3);
+  for(let a=0;a<arms;a++){ const side=(a%2?1:-1)*(R(2)<0.5?1:-1), ay=110+R(3+a)*170, ah=90+R(5+a)*110, aw=34, reach=40+R(7+a)*22;
+    const ax= side>0 ? tx+tw-6 : tx-reach+6;
+    g.fillStyle='#3c4d2b'; g.beginPath(); g.roundRect(ax, ay, reach, aw*0.8, aw*0.4); g.fill();
+    body(side>0 ? ax+reach-aw : ax, ay-ah+aw*0.8, aw, ah); }
+  rim(g,w,h); }); }
+function joshua(seed){ const R=k=>hash(seed*17+k); return mkSprite(320,420,(g,w,h)=>{
+  g.lineCap='round'; g.strokeStyle='#3a3026';
+  const branch=(x,y,ang,len,wd,d)=>{ const x2=x+Math.cos(ang)*len, y2=y+Math.sin(ang)*len; g.lineWidth=wd; g.beginPath(); g.moveTo(x,y); g.lineTo(x2,y2); g.stroke();
+    if(d<=0||len<30){ for(let k=0;k<16;k++){ const a=Math.random()*Math.PI*2, l=10+Math.random()*16; g.strokeStyle='#4c5a2f'; g.lineWidth=2.5; g.beginPath(); g.moveTo(x2,y2); g.lineTo(x2+Math.cos(a)*l,y2+Math.sin(a)*l); g.stroke(); } g.strokeStyle='#3a3026'; return; }
+    branch(x2,y2,ang-0.5-R(d)*0.4,len*0.72,wd*0.7,d-1); branch(x2,y2,ang+0.45+R(d+9)*0.4,len*0.7,wd*0.7,d-1); };
+  branch(w/2,h,-Math.PI/2+(R(1)-0.5)*0.2,150,22,3); rim(g,w,h); }); }
+function bush(seed,dry){ const R=k=>hash(seed*13+k); return mkSprite(260,150,(g,w,h)=>{
+  for(let k=0;k<70;k++){ const a=R(k)*Math.PI, r=(0.3+0.7*R(k+99))*w*0.42, x=w/2+Math.cos(a)*r*(R(k+7)<0.5?-1:1)*0.9, y=h-Math.sin(a)*r*0.75-6;
+    g.fillStyle= dry ? `rgba(${120+R(k+3)*40|0},${100+R(k+4)*30|0},${70+R(k+5)*20|0},.85)` : `rgba(${70+R(k+3)*30|0},${84+R(k+4)*30|0},${48+R(k+5)*20|0},.9)`;
+    g.beginPath(); g.arc(x,y,7+R(k+11)*12,0,Math.PI*2); g.fill(); }
+  rim(g,w,h); }); }
+function rock(seed){ const R=k=>hash(seed*7+k); return mkSprite(240,140,(g,w,h)=>{
+  const n=9, pts=[]; for(let k=0;k<n;k++){ const a=Math.PI+k/(n-1)*Math.PI; pts.push([w/2+Math.cos(a)*w*0.45*(0.75+0.25*R(k)), h-4+Math.sin(a)*h*0.85*(0.6+0.4*R(k+20))]); }
+  const gr=g.createLinearGradient(0,0,w,h); gr.addColorStop(0,'#9a6a46'); gr.addColorStop(1,'#5a3826'); g.fillStyle=gr;
+  g.beginPath(); g.moveTo(pts[0][0],pts[0][1]); pts.forEach(p=>g.lineTo(p[0],p[1])); g.closePath(); g.fill(); rim(g,w,h); }); }
+function dune(seed){ const R=k=>hash(seed*5+k); return mkSprite(600,200,(g,w,h)=>{
+  const gr=g.createLinearGradient(0,0,0,h); gr.addColorStop(0,'#e9bd85'); gr.addColorStop(1,'#cf9a62'); g.fillStyle=gr;
+  g.beginPath(); g.moveTo(0,h); g.bezierCurveTo(w*0.25,h*(0.2+0.3*R(1)),w*0.5,h*0.05,w*0.62,h*0.1); g.bezierCurveTo(w*0.8,h*0.3,w*0.9,h*0.7,w,h); g.fill();
+  g.fillStyle='rgba(150,95,55,.35)'; g.beginPath(); g.moveTo(w*0.62,h*0.1); g.bezierCurveTo(w*0.8,h*0.3,w*0.9,h*0.7,w,h); g.lineTo(w*0.7,h); g.closePath(); g.fill(); }); }
+let SPR=null;
+function buildSprites(){ SPR={
+  saguaro:[saguaro(1),saguaro(2),saguaro(3),saguaro(4)], joshua:[joshua(5),joshua(6)],
+  bush:[bush(7,false),bush(8,false),bush(9,true),bush(10,true)], rock:[rock(11),rock(12)], dune:[dune(13),dune(14)] }; }
+// o que existe ao lado da estrada em cada segmento (determinístico, sempre igual no mesmo sítio)
+const KIND={ saguaro:{h:[1500,2400]}, joshua:{h:[1400,2100]}, bush:{h:[260,520]}, rock:{h:[240,520]}, dune:{h:[1400,2600]} };
+function propsAt(i){
+  const out=[], r=hash(i);
+  const add=(kind,k,side,off)=>{ const arr=SPR[kind], s=arr[Math.floor(hash(i*3+k)*arr.length)], H=KIND[kind].h, hh=H[0]+(H[1]-H[0])*hash(i*5+k);
+    out.push({s, side, off, h:hh}); };
+  if(r<0.55) add('bush',1,hash(i*2)<0.5?-1:1,1.15+hash(i*9)*1.6);
+  if(hash(i+77)<0.16) add('saguaro',2,hash(i*4)<0.5?-1:1,1.4+hash(i*11)*3.2);
+  if(hash(i+177)<0.05) add('joshua',3,hash(i*6)<0.5?-1:1,1.8+hash(i*12)*3);
+  if(hash(i+277)<0.12) add('rock',4,hash(i*8)<0.5?-1:1,1.2+hash(i*14)*2.5);
+  if(hash(i+377)<0.05) add('dune',5,hash(i*10)<0.5?-1:1,4+hash(i*15)*5);
+  if(hash(i+477)<0.35) add('bush',6,hash(i*16)<0.5?-1:1,2.5+hash(i*17)*6);
+  return out;
+}
+const CDUST=[]; let carT=0, fxL=0, fxB=0, fxR=0, bounce=0;
 function drawCar(dt){
+  if(!SPR) buildSprites();
   carT+=dt;
-  const kmh=sv*3.6, spd=1-Math.exp(-kmh/90);
+  const kmh=sv*3.6, spd=1-Math.exp(-kmh/110);
   fxL+=(carFx.load-fxL)*(1-Math.exp(-dt/0.12)); fxB+=(carFx.brake-fxB)*(1-Math.exp(-dt/0.15)); fxR+=(carFx.r-fxR)*(1-Math.exp(-dt/0.1));
-  carFx.pop*=Math.exp(-dt/0.07);
-  const iw=carImg.naturalWidth, ih=carImg.naturalHeight;
-  // enquadramento "cover", carro ao centro; aproxima um pouco em aceleração (squat)
-  const base=Math.max(W/iw, Hh/ih)*1.04*(1+0.025*fxL*fxR);
-  const amp=(0.4+3.2*fxR*fxL+1.2*spd)*(1+2*carFx.pop);
-  shakeX+=((Math.sin(carT*61)+Math.sin(carT*97))*amp*0.5-shakeX)*0.5;
-  shakeY+=((Math.sin(carT*73)+Math.sin(carT*131))*amp*0.5-shakeY)*0.5;
-  const dw=iw*base, dh=ih*base, ox=(W-dw)/2+shakeX, oy=(Hh-dh)*0.62+shakeY;
-  const X=u=>ox+u*dw, Y=v=>oy+v*dh;
-  g2.globalCompositeOperation='source-over'; g2.globalAlpha=1;
-  g2.fillStyle='#1a120c'; g2.fillRect(0,0,W,Hh);
-  g2.drawImage(carImg,ox,oy,dw,dh);
-  // borrão radial (zoom) com a velocidade: o mundo passa, o carro fica nítido ao centro
-  if(spd>0.05){
-    g2.save(); g2.beginPath(); g2.rect(0,0,W,Hh);
-    g2.ellipse(X(0.5),Y(0.6),dw*0.37,dh*0.42,0,0,Math.PI*2); g2.clip('evenodd');
-    for(let k=1;k<=4;k++){ const sc=1+0.03*k*spd; g2.globalAlpha=0.3*spd;
-      g2.drawImage(carImg,X(0.5)-dw*sc*0.5,Y(0.47)-dh*sc*0.47,dw*sc,dh*sc); }
-    g2.restore(); g2.globalAlpha=1;
+  carFx.pop*=Math.exp(-dt/0.06);
+  const vz=kmh*RD.SPEEDK; RD.z+=vz*dt;
+  const seg=RD.seg, base=Math.floor(RD.z/seg), frac=(RD.z%seg)/seg;
+  RD.bg+=curveAt(base)*vz*dt*0.0000035;
+  // câmara: segue a altura da estrada onde está o carro
+  const camY=hillAt(base)+(hillAt(base+1)-hillAt(base))*frac+RD.camH, cx=W/2;
+  const hzY=Hh*0.46; // horizonte nominal
+  const P=(x,y,z)=>{ const sc=RD.depth/z; return {x:cx+sc*x*W/2, y:hzY-sc*(y-camY)*W/2, w:sc*RD.roadW*W/2, sc}; };
+  // céu ao pôr do sol + sol
+  const sky=g2.createLinearGradient(0,0,0,hzY); sky.addColorStop(0,'#f3e5d0'); sky.addColorStop(0.6,'#f6d8b2'); sky.addColorStop(1,'#f4c690');
+  g2.globalCompositeOperation='source-over'; g2.globalAlpha=1; g2.fillStyle=sky; g2.fillRect(0,0,W,Hh);
+  const sunX=cx-RD.bg*W*0.6%(W*3)+W*0.15, sun=g2.createRadialGradient(sunX,hzY*0.92,0,sunX,hzY*0.92,Math.max(W,Hh)*0.45);
+  sun.addColorStop(0,'rgba(255,248,225,.95)'); sun.addColorStop(0.08,'rgba(255,230,180,.6)'); sun.addColorStop(1,'rgba(255,200,140,0)'); g2.fillStyle=sun; g2.fillRect(0,0,W,Hh);
+  // montanhas ao longe (paralaxe com as curvas)
+  for(const [k,col,amp,sp] of [[0,'rgba(196,150,120,.55)',0.07,0.35],[1,'rgba(176,128,98,.7)',0.045,0.7]]){
+    g2.fillStyle=col; g2.beginPath(); g2.moveTo(0,hzY+2);
+    for(let x=0;x<=W+20;x+=20){ const u=(x/W+RD.bg*sp+k*3.1); const yy=hzY-Hh*amp*(0.45+0.3*Math.sin(u*5.3)+0.2*Math.sin(u*13.7+1)+0.08*Math.sin(u*31)); g2.lineTo(x,yy); }
+    g2.lineTo(W,hzY+2); g2.closePath(); g2.fill(); }
+  // estrada: perto → longe, com corte pelo maxY (colinas escondem o que está atrás)
+  let x=0, dx=-curveAt(base)*frac, maxY=Hh; const segs=[];
+  for(let n=0;n<RD.draw;n++){
+    const i=base+n, z1=n*seg-frac*seg+1, z2=z1+seg;
+    const p1=P(x,hillAt(i),Math.max(z1,30)); x+=dx; dx+=curveAt(i); const p2=P(x,hillAt(i+1),z2);
+    segs.push({i,p1,p2,clip:maxY,n});
+    if(p2.y>=maxY || p2.y>=p1.y) continue;
+    const f=Math.pow(n/RD.draw,1.6), alt=Math.floor(i/3)%2, yTop=p2.y, yBot=Math.min(p1.y,maxY);
+    g2.fillStyle=mixC(alt?PAL.sand1:PAL.sand2,PAL.haze,f); g2.fillRect(0,yTop-0.5,W,yBot-yTop+0.5);
+    const quad=(c,w1,w2,o1=0,o2=0)=>{ g2.fillStyle=c; g2.beginPath(); g2.moveTo(p1.x+o1-w1,p1.y+1); g2.lineTo(p1.x+o1+w1,p1.y+1); g2.lineTo(p2.x+o2+w2,p2.y-0.5); g2.lineTo(p2.x+o2-w2,p2.y-0.5); g2.closePath(); g2.fill(); };
+    quad(mixC(alt?PAL.shoulder1:PAL.shoulder2,PAL.haze,f), p1.w*1.28, p2.w*1.28);
+    quad(mixC(alt?PAL.road1:PAL.road2,PAL.haze,f), p1.w, p2.w);
+    const lc=mixC(PAL.line,PAL.haze,f), lw1=p1.w*0.022, lw2=p2.w*0.022;
+    quad(lc,lw1,lw2,-p1.w*0.93,-p2.w*0.93); quad(lc,lw1,lw2,p1.w*0.93,p2.w*0.93);
+    if(Math.floor(i/4)%2===0) quad(lc,p1.w*0.018,p2.w*0.018);
+    // areia que o vento atirou para cima do asfalto
+    if(hash(i*19)<0.25){ const o=(hash(i*23)<0.5?-1:1)*0.7; g2.globalAlpha=0.35*(1-f); quad(mixC(PAL.shoulder1,PAL.haze,f),p1.w*0.35,p2.w*0.35,p1.w*o,p2.w*o); g2.globalAlpha=1; }
+    maxY=p2.y;
   }
-  // riscos no asfalto e areia a passar dos dois lados do carro (perspetiva a partir do horizonte)
-  const hx=X(0.5), hy=Y(0.46), vz=0.15+2.4*spd;
-  g2.save(); g2.beginPath(); g2.rect(0,hy,X(0.135),Hh); g2.rect(X(0.865),hy,W,Hh); g2.rect(0,Y(0.97),W,Hh); g2.clip();
-  g2.lineCap='round';
-  for(const st of STREAKS){
-    st.z+=vz*dt*(0.6+st.z);
-    if(st.z>1.15){ st.z=0.02; st.side=Math.random()<0.5?-1:1; st.off=0.15+Math.random()*1.4; }
-    const p=z=>{ const d=Math.pow(z,2.2); return [hx+st.side*st.off*dw*0.55*d, hy+(Hh-hy)*1.1*d]; };
-    const [x1,y1]=p(st.z), [x0,y0]=p(Math.max(0,st.z-st.len*(0.3+2.5*spd)));
-    g2.strokeStyle=`rgba(255,238,215,${(0.06+0.45*spd)*Math.min(1,st.z*3)})`; g2.lineWidth=0.8+4.5*st.z*st.z;
-    g2.beginPath(); g2.moveTo(x0,y0); g2.lineTo(x1,y1); g2.stroke();
-  }
-  g2.restore();
-  // pó/areia levantada atrás das rodas em aceleração forte
-  g2.fillStyle='rgba(214,170,120,.5)';
-  for(const d of SAND){
-    d.x+= (d.x<0.5?-1:1)*d.v*dt*0.15*(0.3+fxL); d.y+=d.v*dt*0.25*(0.2+spd);
-    if(d.x<-0.05||d.x>1.05||d.y>1.05){ d.x=0.3+Math.random()*0.4; d.y=0.82+Math.random()*0.1; }
-    const a=(0.08+0.5*fxL*spd)*(1-Math.abs(d.x-0.5)); if(a<0.03) continue;
-    g2.globalAlpha=a; g2.beginPath(); g2.arc(X(d.x),Y(d.y),d.s*(1+spd),0,Math.PI*2); g2.fill();
+  // adereços: longe → perto
+  for(let k=segs.length-1;k>=0;k--){
+    const s=segs[k]; if(s.p1.y<=0) continue; const f=Math.pow(s.n/RD.draw,1.6);
+    for(const pr of propsAt(s.i)){
+      const sc=s.p1.sc, hpx=pr.h*sc*W/2; if(hpx<2) continue;
+      const wpx=hpx*pr.s.width/pr.s.height, sx=s.p1.x+pr.side*pr.off*s.p1.w, sy=s.p1.y;
+      if(sy-hpx>s.clip) continue;
+      const vis=Math.min(hpx, s.clip-(sy-hpx)); if(vis<=1) continue;
+      g2.globalAlpha=1-0.85*f;
+      const srcH=pr.s.height*vis/hpx;
+      g2.drawImage(pr.s,0,0,pr.s.width,srcH, sx-wpx/2, sy-hpx, wpx, vis);
+    }
   }
   g2.globalAlpha=1;
-  // farolins: brilho extra ao travar
+  // linhas de velocidade nas margens
+  if(spd>0.35){ g2.strokeStyle=`rgba(255,245,230,${(spd-0.35)*0.5})`; g2.lineWidth=1.5;
+    for(let k=0;k<14;k++){ const a=hash(k*7+Math.floor(carT*14))*Math.PI*2, r0=Math.max(W,Hh)*(0.42+0.2*hash(k+Math.floor(carT*9)));
+      const ex=cx+Math.cos(a)*r0, ey=hzY+Math.sin(a)*r0*0.7; if(Math.abs(ex-cx)<W*0.3) continue;
+      g2.beginPath(); g2.moveTo(ex,ey); g2.lineTo(cx+Math.cos(a)*r0*1.25,hzY+Math.sin(a)*r0*0.875); g2.stroke(); } }
+  // carro
+  if(!(carSpr.complete&&carSpr.naturalWidth)) return;
+  const cw=Math.min(W*0.33, Hh*0.5*1.53, 620), ch=cw*carSpr.naturalHeight/carSpr.naturalWidth;
+  bounce+=((Math.sin(carT*(18+30*fxR))*(0.6+1.8*fxR*fxL)+Math.sin(carT*7.1)*0.6*spd)-bounce)*0.5;
+  const lean=-curveAt(base)*cw*0.025*spd;
+  const ox=cx-cw/2+lean, oy=Hh-ch-Math.max(14,Hh*0.035)+bounce-2.5*fxL+2*fxB;
+  const X=u=>ox+u/1024*cw, Y=v=>oy+v/670*ch;
+  // sombra
+  const sh=g2.createRadialGradient(cx+lean,oy+ch*0.97,0,cx+lean,oy+ch*0.97,cw*0.6);
+  sh.addColorStop(0,'rgba(20,10,5,.75)'); sh.addColorStop(1,'rgba(20,10,5,0)'); g2.fillStyle=sh;
+  g2.save(); g2.translate(cx+lean,oy+ch*0.97); g2.scale(1,0.13); g2.translate(-(cx+lean),-(oy+ch*0.97)); g2.fillRect(cx+lean-cw*0.6,oy+ch*0.97-cw*0.6,cw*1.2,cw*1.2); g2.restore();
+  // pó atrás das rodas
+  if(fxL*spd>0.12 && Math.random()<fxL){ for(let k=0;k<2;k++) CDUST.push({x:X(Math.random()<0.5?70:954), y:Y(650), vx:(Math.random()-0.5)*80, vy:20+Math.random()*60, a:0.12+0.25*fxL, r:6+Math.random()*10, t:0}); }
+  for(let k=CDUST.length-1;k>=0;k--){ const d=CDUST[k]; d.t+=dt; d.x+=d.vx*dt+(d.x<cx?-1:1)*40*spd*dt; d.y+=d.vy*dt; d.r+=40*dt; d.a*=Math.exp(-dt/0.35);
+    if(d.a<0.02){ CDUST.splice(k,1); continue; } g2.fillStyle=`rgba(220,180,130,${d.a})`; g2.beginPath(); g2.arc(d.x,d.y,d.r,0,Math.PI*2); g2.fill(); }
+  if(CDUST.length>160) CDUST.splice(0,CDUST.length-160);
+  g2.drawImage(carSpr,ox,oy,cw,ch);
+  // matrícula limpa
+  g2.fillStyle='#f1efe9'; g2.beginPath(); g2.roundRect(X(334),Y(446),X(664)-X(334),Y(516)-Y(446),cw*0.006); g2.fill();
+  g2.fillStyle='#1b1b1b'; g2.font=`700 ${Math.round(ch*0.075)}px "Chakra Petch",sans-serif`; g2.textAlign='center'; g2.textBaseline='middle';
+  g2.fillText('GT3 RS',X(499),Y(483)); g2.textAlign='start'; g2.textBaseline='alphabetic';
+  // luzes e escape
   g2.globalCompositeOperation='lighter';
-  const glow=(u,v,r,c,a)=>{ if(a<0.01) return; const gr=g2.createRadialGradient(X(u),Y(v),0,X(u),Y(v),r*dw);
-    gr.addColorStop(0,`rgba(${c},${a})`); gr.addColorStop(1,`rgba(${c},0)`); g2.fillStyle=gr; g2.fillRect(X(u)-r*dw,Y(v)-r*dw,2*r*dw,2*r*dw); };
-  const bl=0.06+0.6*fxB; glow(0.215,0.565,0.09+0.03*fxB,'255,30,15',bl); glow(0.765,0.565,0.09+0.03*fxB,'255,30,15',bl); glow(0.49,0.305,0.06+0.02*fxB,'255,25,15',bl*0.7);
-  // escape: calor com rotação e carga; chama nos estalos
-  const heat=0.06+0.35*fxR*fxL; glow(0.457,0.89,0.05,'255,120,40',heat); glow(0.513,0.89,0.05,'255,120,40',heat);
-  if(carFx.pop>0.05){ const f=carFx.pop; glow(0.457,0.9,0.07+0.05*f,'255,170,60',0.9*f); glow(0.513,0.9,0.07+0.05*f,'255,170,60',0.9*f); glow(0.485,0.92,0.16*f,'255,90,20',0.35*f); }
+  const glow=(u,v,r,c,a,sy=1)=>{ if(a<0.01) return; const px=X(u), py=Y(v), rr=r*cw; g2.save(); g2.translate(px,py); g2.scale(1,sy);
+    const gr=g2.createRadialGradient(0,0,0,0,0,rr); gr.addColorStop(0,`rgba(${c},${a})`); gr.addColorStop(1,`rgba(${c},0)`); g2.fillStyle=gr; g2.fillRect(-rr,-rr,2*rr,2*rr); g2.restore(); };
+  const bl=0.1+0.75*fxB; glow(140,318,0.17,'255,35,20',bl,0.45); glow(872,318,0.17,'255,35,20',bl,0.45); glow(500,90,0.12,'255,30,20',bl*0.8,0.3);
+  const heat=0.08+0.4*fxR*fxL; glow(462,612,0.05,'255,130,50',heat); glow(540,612,0.05,'255,130,50',heat);
+  if(carFx.pop>0.04){ const f=carFx.pop;
+    for(const ex of [462,540]){ const fl=(0.7+0.6*Math.random())*f;
+      glow(ex,630,0.07*fl+0.02,'120,160,255',0.7*fl,1.1);
+      glow(ex,640,0.11*fl+0.03,'255,175,60',0.95*fl,1.3);
+      glow(ex,660,0.18*fl+0.04,'255,90,20',0.55*fl,1.1); } }
   g2.globalCompositeOperation='source-over';
-  // vinheta que aperta com a velocidade
-  const vg=g2.createRadialGradient(W/2,Hh*0.55,Math.min(W,Hh)*(0.55-0.15*spd),W/2,Hh*0.55,Math.max(W,Hh)*0.8);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,`rgba(10,5,0,${0.35+0.35*spd})`); g2.fillStyle=vg; g2.fillRect(0,0,W,Hh);
+  // vinheta
+  const vg=g2.createRadialGradient(cx,Hh*0.6,Math.min(W,Hh)*(0.6-0.15*spd),cx,Hh*0.6,Math.max(W,Hh)*0.85);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,`rgba(40,20,5,${0.25+0.3*spd})`); g2.fillStyle=vg; g2.fillRect(0,0,W,Hh);
 }
 /* Ornitóptero visto de trás: casco blindado cinzento-escuro, asas em lâmina que batem em sincronia com o som */
 let flapPh=0, lastBeat=0;
